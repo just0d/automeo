@@ -1,0 +1,59 @@
+{
+  // AutoMEO overrides — every key is optional, delete what you do not need.
+  // Lines starting with // are ignored. See docs/TROUBLESHOOTING.md.
+
+  "mongolbank": {
+    // Pin a specific file id for one month. Use this when the run logs
+    // "no listing covers YYYY-MM" and the id probe does not find it either.
+    // Capture the id from DevTools: open the report's page, click the Excel
+    // download, look at the request to /api/survey/data and read `id`.
+    "report_ids": {
+      // "2026-06": { "bulletin": 5217, "banking_balance_sheet": 5219 }
+    },
+
+    // The surveyid of a report's download page, if auto-discovery fails.
+    // DevTools: open the page, find the POST to /api/survey/sublist,
+    // read `surveyid` from the query string.
+    "survey_ids": {
+      // "banking_balance_sheet": 12
+    },
+
+    // A known-good id for any month, tried last when everything else fails.
+    "static_fallback": {
+      // "bulletin": 5217
+    },
+
+    // Only if Mongolbank moves its API.
+    "api": {
+      // "main":      "https://stat.mongolbank.mn/api/report/main",
+      // "sublist":   "https://stat.mongolbank.mn/api/survey/sublist",
+      // "data":      "https://stat.mongolbank.mn/api/survey/data",
+      // "indicator": "https://stat.mongolbank.mn/api/indicator/data"
+    }
+  },
+
+  "nso": {
+    // Replace a table id when 1212.mn renames or republishes one.
+    // DevTools: open the table on 1212.mn, find the POST to
+    // /api/table-view, and read id / sector / subsector from the URL.
+    "tables": {
+      // "nso_mieg_raw": {
+      //   "id": "DT_NSO_0500_001V5.px",
+      //   "sector": "Economy%2C%20environment",
+      //   "subsector": "National%20Accounts",
+      //   "extra": ""
+      // }
+    }
+  },
+
+  "deposits": {
+    // The interactive balance-sheet endpoint on stat.mongolbank.mn/finance.
+    // "report_id": "86",
+    // "parent_id": 10,
+    // "indicator_ids": ["60564", "60565"]
+  },
+
+  "customs": {
+    // "list_api": "https://www.gaali.mn/shared-api/api/statistic-news"
+  }
+}

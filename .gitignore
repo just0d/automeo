@@ -1,0 +1,43 @@
+# Downloaded source data. Everything in here is fetched at run time and can
+# be re-fetched; none of it belongs in version control. The seed copy of the
+# Balance of Payments export lives in seed/ instead.
+raw_data/*
+!raw_data/.gitkeep
+
+# Pipeline output
+Macro_Metrics_*.xlsx
+processed_metrics.json
+processed_series.json
+deck_digest.md
+
+# Decks
+*.pptx
+!docs/**/*.pptx
+
+# Versioned reference artifacts used by the approved July deck workflow
+!docs/reference/*.xlsx
+
+# Hand-set identifiers. This one is deliberately ignored: it records what is
+# broken on YOUR machine right now, and committing it would silently pin ids
+# for everyone else. overrides.example.json is the version-controlled
+# template. If your team wants a shared set, commit it under another name and
+# copy it into place.
+overrides.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# LibreOffice lock files, left behind when a recalculation is interrupted
+.~lock.*#
