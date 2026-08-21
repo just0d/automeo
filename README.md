@@ -6,9 +6,8 @@ Mongolia — into a deck-ready Excel workbook: **18 sheets, ~1,030 live
 formulas, 14 ready-made charts**, bilingual labels, every figure traceable to
 its source.
 
-> 📘 **The Operations Manual is distributed separately** (`AutoMEO_Operations_Manual.docx`).
-> It covers how to run it, where every number comes from, and how to repair it
-> when a source changes. Read that first — this page is only the quick start.
+> 📘 The operations manual and presentation prompt are distributed separately
+> in the companion `ameo` folder.
 
 ---
 
@@ -17,7 +16,7 @@ its source.
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp seed/bop_manual.xlsx raw_data/                   # starter file; refresh monthly
+# Keep raw_files/bop_manual.xlsx current each month.
 
 python run_all.py                  # newest published month, detected automatically
 python run_all.py 6 2026           # force a month
@@ -38,10 +37,8 @@ Then fill the two yellow cells on the `Budget` sheet — the annual revenue plan
 and the annual coal export plan, both set once a year.
 
 The July-approved presentation structure is the canonical deck contract: 21
-slides, with the sector section on slides 17–21. Use
-[`docs/DECK_PROMPT.md`](docs/DECK_PROMPT.md) with the previous approved deck as
-the base file; it maps every slide to its workbook source and preserves the
-July chart/layout pattern.
+slides, with the sector section on slides 17–21. The companion `ameo` folder
+contains the prompt and boss-facing reference materials.
 
 **Read `Data_Vintage`, the first sheet, before the numbers.** Sources publish
 on different calendars, so a report for month M is always a mix. That sheet
@@ -62,9 +59,9 @@ python overrides.py            # checks it parses, prints what it pins
 { "mongolbank": { "report_ids": { "2026-06": { "bulletin": 5217 } } } }
 ```
 
-Chapter 5 of the Operations Manual ranks what is most likely to break, gives
-the log line to look for, and walks through capturing a replacement identifier
-from browser DevTools.
+The companion operations manual ranks what is most likely to break, gives the
+log line to look for, and walks through capturing a replacement identifier from
+browser DevTools.
 
 ## Layout
 
@@ -77,8 +74,7 @@ overrides.py            hand-set identifiers
 deck_digest.py          workbook -> plain text for the deck chat
 check_deck.py           checks a finished .pptx
 overrides.example.json  template for overrides.json
-seed/                   starter Balance of Payments export
-raw_data/               downloaded sources (git-ignored)
+raw_files/              starter and downloaded source files (git-ignored)
 ```
 
 ## Licence

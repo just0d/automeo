@@ -386,11 +386,18 @@ def main():
     if wk.get("products"):
         w("## 8c. Weekly prices, Ulaanbaatar")
         w()
-        w(f"NSO seven-day price survey, latest week **{wk.get('as_of')}**"
-          + (" (later weeks were set aside so the report stays inside its "
-             "own month)" if wk.get("clamped") else "")
-          + ". Prices in tugrik. This replaces the meat and fuel figures "
-            "that used to be typed in by hand.")
+        me = wk.get("month_end_as_of")
+        w(f"NSO seven-day price survey, latest week **{wk.get('as_of')}**, "
+          f"from {wk.get('source_file', '?')}. Prices in tugrik.")
+        w()
+        if me and me != wk.get("as_of"):
+            w(f"**This is a leading indicator and it runs past the reported "
+              f"month on purpose** — the slide is about where meat and fuel "
+              f"are heading before the monthly CPI catches up. The latest "
+              f"week is **{wk['as_of']}**; the last week inside the reported "
+              f"month was **{me}**. Whichever you quote, put its date on the "
+              f"slide.")
+            w()
         w()
         table(["Group", "YTD %", "YoY %", "Members"],
               [[g["label"], sg(g.get("ytd_pct")), sg(g.get("yoy_pct")),

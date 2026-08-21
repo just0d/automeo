@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Computes every metric and series from ./raw_data into
+"""Computes every metric and series from ./raw_files into
 processed_metrics.json and processed_series.json.
 See the Data Dictionary document for field-by-field lineage.
 
@@ -18,7 +18,7 @@ import pandas as pd
 
 # CONFIG
 BASE_DIR = Path(__file__).resolve().parent
-RAW_DATA_DIR = BASE_DIR / "raw_data"
+RAW_DATA_DIR = BASE_DIR / "raw_files"
 NSO_JSON = RAW_DATA_DIR / "nso_gdp_raw.json"
 METRICS_JSON = BASE_DIR / "processed_metrics.json"
 SERIES_JSON = BASE_DIR / "processed_series.json"
@@ -59,7 +59,7 @@ NSO_DIM_PERIOD = "Он"
 NSO_REAL_GDP_2015 = 3       # 'ДНБ, 2015 оны зэрэгцүүлэх үнээр'
 NSO_TOTAL_SECTOR = 0        # 'ДНБ'
 
-INFLATION_TARGET_PCT = 8.0  # Mongolbank official target (deck slide 7)
+INFLATION_TARGET_PCT = 8.0  # Mongolbank official target (deck slide 6)
 
 # Mongolbank card-name fragments -> metric keys (matched case-insensitive,
 # 'contains'). The section sweep saves everything; we map what we recognise.
@@ -256,7 +256,7 @@ def extract_customs(files):
         xls = pd.ExcelFile(files[target_key])
     except Exception as exc:
         log.error("Target workbook customs_%d_%02d.xlsx is unreadable (%s) -- "
-                  "delete it from raw_data and re-run the ingestor. Trade "
+                  "delete it from raw_files and re-run the ingestor. Trade "
                   "cells stay flagged.", TARGET_YEAR, TARGET_MONTH, exc)
         return kpis, series
     try:
@@ -695,7 +695,7 @@ def extract_mieg():
             log.warning(kpis["_mieg_period_note"])
     else:
         log.warning("MIEG: no monthly periods decoded -- check the table "
-                    "structure in raw_data/nso_mieg_raw.json")
+                    "structure in raw_files/nso_mieg_raw.json")
 
     if contrib_ind is not None and periods:
         y, mth, pos = periods[-1]
@@ -870,7 +870,7 @@ def extract_bulletin():
                      kpis.get("budget_expenditure_bln"),
                      kpis.get("budget_balance_bln_mnt"), y, mth)
 
-        # monthly SERIES for deck slides 6 & 9 (last 16 months)
+        # monthly SERIES for deck slides 6 & 8 (last 16 months)
         def col_series(df, col, n=16):
             """[(year, month, value)] for the newest n period rows."""
             out, year, month = [], None, None
@@ -958,7 +958,7 @@ def extract_bulletin():
             log.info("bulletin USD/MNT eop = %s (YoY %s%%)",
                      kpis["usd_mnt_rate"], kpis.get("usd_mnt_yoy_pct"))
 
-        # depository-corporation loans (slide 15: growth by borrower)
+        # depository-corporation loans (slide 16: growth by borrower)
         df2 = _bul_sheet(xls, "dc loan")
         if df2 is not None:
             for key, kws in (("dc_loans_total", ["total loans", "amount"]),
@@ -1002,11 +1002,18 @@ def extract_bulletin():
                     mo = mm2
                     rowmap[(yr, mo)] = r2
             if gen_c and rowmap:
-                (ly, lm) = max(rowmap)
-                rt, rp = rowmap[(ly, lm)], rowmap.get((ly - 1, lm))
-                gen_p = _f(df.iat[rp, gen_c]) if rp else None
-                comps = []
-                if rp is not None and gen_p:
+                # The same decomposition, for any month in the sheet. The
+                # deck's table shows this year beside last year, and the
+                # bulletin carries every month's history -- so the prior year
+                # is a second call, not a second download.
+                def _cpi_at(y, m):
+                    rt, rp = rowmap.get((y, m)), rowmap.get((y - 1, m))
+                    if rt is None or rp is None:
+                        return []
+                    gp = _f(df.iat[rp, gen_c])
+                    if not gp:
+                        return []
+                    out = []
                     for c2 in range(1, gen_c):
                         hdr = " ".join(
                             str(df.iat[hr, c2]).strip()
@@ -1020,11 +1027,15 @@ def extract_bulletin():
                         vt, vp = _f(df.iat[rt, c2]), _f(df.iat[rp, c2])
                         if vt is None or vp in (None, 0):
                             continue
-                        comps.append({
+                        out.append({
                             "name": hdr[:80],
                             "level": round(vt, 2),
-                            "pp": round((vt - vp) / gen_p * 100, 2),
+                            "pp": round((vt - vp) / gp * 100, 2),
                             "yoy_pct": round((vt / vp - 1) * 100, 1)})
+                    return out
+
+                (ly, lm) = max(rowmap)
+                comps = _cpi_at(ly, lm)
                 if comps:
                     comps.sort(key=lambda d: -d["pp"])
                     notes["cpi_components"] = comps
@@ -1033,6 +1044,20 @@ def extract_bulletin():
                     log.info("CPI components: %d categories, pp sum %.2f "
                              "(headline %s)", len(comps), total_pp,
                              kpis.get("inflation"))
+                    # the same month a year earlier, keyed by category name so
+                    # the two years line up even if the sheet reorders columns
+                    prev = _cpi_at(ly - 1, lm)
+                    if prev:
+                        notes["cpi_components_prev"] = prev
+                        notes["cpi_components_prev_period"] = \
+                            f"{ly - 1}-{lm:02d}"
+                        log.info("CPI components %d-%02d (prior year): %d "
+                                 "categories, pp sum %.2f", ly - 1, lm,
+                                 len(prev), sum(d["pp"] for d in prev))
+                    else:
+                        log.info("CPI components: no prior-year comparison "
+                                 "(the bulletin does not reach %d-%02d).",
+                                 ly - 2, lm)
                     if kpis.get("inflation") is not None and \
                             abs(total_pp - kpis["inflation"]) > 0.5:
                         log.warning("CPI component pp sum deviates from "
@@ -1640,7 +1665,7 @@ def _bop_wrong_file(path, df):
                   path.name)
     log.error("  What to download: stat.mongolbank.mn/external -> "
               "'Төлбөрийн тэнцэл' -> export to Excel -> save over "
-              "raw_data/bop_manual.xlsx.")
+              "raw_files/bop_manual.xlsx.")
     log.error("  How to tell you have the right one: its first column reads "
               "I. УРСГАЛ ДАНС, II. ХӨРӨНГИЙН ДАНС, III. САНХҮҮГИЙН ДАНС.")
     log.error("  The run continues. Everything else is unaffected; the BoP "
@@ -1650,12 +1675,12 @@ def _bop_wrong_file(path, df):
 
 def extract_bop_detail():
     """
-    Parse the manually downloaded BoP export (raw_data/bop_manual.xlsx,
+    Parse the manually downloaded BoP export (raw_files/bop_manual.xlsx,
     'Төлбөрийн тэнцэл (хураангуй)'): header row carries monthly columns
     ('2023-01 Эцсийн**', ...); account rows are matched exactly by label
     after stripping the roman-numeral prefix. Produces:
       * monthly series per account (mln USD),
-      * annual sums (full years + current-year YTD -> deck slide 13 chart),
+      * annual sums (full years + current-year YTD -> deck slide 12 chart),
       * KPIs = current-year YTD per account.
     """
     log.info("===== MONGOLBANK BALANCE OF PAYMENTS (manual file) =====")
@@ -1667,7 +1692,7 @@ def extract_bop_detail():
     if path is None:
         log.warning("BoP file not present -- download the Төлбөрийн тэнцэл "
                     "Excel from stat.mongolbank.mn/external and save it as "
-                    "raw_data/bop_manual.xlsx (the ingestor prompts for "
+                    "raw_files/bop_manual.xlsx (the ingestor prompts for "
                     "this). Slide 12 detail stays flagged.")
         return kpis, series
     try:
@@ -2445,7 +2470,7 @@ def extract_bank_loans():
     return kpis, out
 
 
-# REAL SECTOR (deck slides 17-21) — trade, services, construction, industry
+# REAL SECTOR (deck slides 16-21) — trade, services, construction, industry
 #
 # The method is the one used in the analyst's own workbooks, reproduced here
 # exactly (verified against 'trade may 2025.xlsx' to the last decimal):
@@ -2927,7 +2952,7 @@ def extract_industry_detail():
     Returns per-group component lists AND the full per-period contribution
     series, so the charts are a time series like the rest, not one month.
     """
-    log.info("===== INDUSTRY SUB-SECTORS (deck slides 17-18) =====")
+    log.info("===== INDUSTRY SUB-SECTORS (deck slides 16-17) =====")
     cfg = REAL_SECTOR_TABLES["industry"]
     path = RAW_DATA_DIR / cfg["file"]
     out = {"groups": [], "period": None, "growth_pct": None,
@@ -3171,6 +3196,13 @@ WEEKLY_PRICE_GROUPS = [
     ("other", "Бусад хүнс (other food)", ()),        # everything left over
 ]
 WEEKLY_PRICE_LOOKBACK = 130          # ~2.5 years of weeks, enough for YoY
+# NSO publishes this survey as more than one table. They cover the same
+# thing but do not update together, so all cached tables are read and the
+# freshest one wins. Add another line here if a third appears.
+WEEKLY_PRICE_SOURCES = [
+    ("nso_weekly_prices.json",       "capital city (DT_NSO_0600_001V4)"),
+    ("nso_weekly_prices_aimag.json", "by aimag (DT_NSO_0300_010V5)"),
+]
 
 
 def _week_key(label):
@@ -3200,55 +3232,102 @@ def extract_weekly_prices():
     chart.
     """
     log.info("===== WEEKLY PRICES (NSO 7-day survey) =====")
-    path = RAW_DATA_DIR / "nso_weekly_prices.json"
     out = {"products": [], "groups": [], "weeks": [], "as_of": None,
-           "clamped": False}
-    if not path.exists():
-        log.warning("weekly prices: %s not cached -- run raw_ingestor.py.",
-                    path.name)
-        return {}, out
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        js = JsonStat2(raw)
-    except Exception as exc:
-        log.warning("weekly prices: file unusable (%s).", exc)
-        return {}, out
+           "clamped": False, "source_file": None, "month_end_as_of": None,
+           "considered": []}
 
-    dim_p = next((d for d in js.ids if "бүтээгдэхүүн" in d.casefold()),
-                 js.ids[0])
-    dim_t = next((d for d in js.ids if d != dim_p), js.ids[-1])
-    prods = js.labels(dim_p)
-    weeks = js.labels(dim_t)
-
-    # CLAMP. This is the one weekly source, and it publishes ahead of every
-    # monthly one -- a June report must not quote an August price.
-    dated = sorted(((_week_key(l), p) for p, l in weeks.items()
-                    if _week_key(l)), key=lambda x: x[0])
-    if not dated:
-        log.warning("weekly prices: no parseable week labels; skipping.")
+    # NSO publishes this survey as more than one table and they do not
+    # always update together: in August 2026 the capital-city table stalled
+    # in July while the by-aimag table was current. Read every cached table
+    # and use whichever reaches the newest week, rather than trusting one.
+    best = None
+    for fname, what in WEEKLY_PRICE_SOURCES:
+        p = RAW_DATA_DIR / fname
+        if not p.exists():
+            continue
+        try:
+            js = JsonStat2(json.loads(p.read_text(encoding="utf-8")))
+        except Exception as exc:
+            log.warning("weekly prices: %s unusable (%s).", fname, exc)
+            continue
+        dim_p = next((d for d in js.ids if "бүтээгдэхүүн" in d.casefold()),
+                     js.ids[0])
+        dim_t = next((d for d in js.ids if "хугацаа" in d.casefold()),
+                     js.ids[-1])
+        dated = sorted(((_week_key(l), pos)
+                        for pos, l in js.labels(dim_t).items()
+                        if _week_key(l)), key=lambda x: x[0])
+        if not dated:
+            log.warning("weekly prices: %s has no parseable week labels.",
+                        fname)
+            continue
+        newest = "%04d-%02d-%02d" % dated[-1][0]
+        out["considered"].append(f"{what} -> {newest} ({len(dated)} weeks)")
+        if best is None or dated[-1][0] > best[3][-1][0]:
+            best = (fname, what, js, dated, dim_p, dim_t)
+    if best is None:
+        log.warning("weekly prices: no usable table cached -- run "
+                    "raw_ingestor.py.")
         return {}, out
-    keep = [(k, p) for k, p in dated
-            if (k[0], k[1]) <= (TARGET_YEAR, TARGET_MONTH)]
-    if len(keep) < len(dated):
-        out["clamped"] = True
-        log.info("weekly prices: %d week(s) after %d-%02d set aside so the "
-                 "report cannot quote a price from the future.",
-                 len(dated) - len(keep), TARGET_YEAR, TARGET_MONTH)
-    keep = keep[-WEEKLY_PRICE_LOOKBACK:]
+    fname, what, js, dated, dim_p, dim_t = best
+    out["source_file"] = fname
+    for line in out["considered"]:
+        log.info("weekly prices: %s", line)
+    if len(out["considered"]) > 1:
+        log.info("weekly prices: using %s, the freshest of %d table(s).",
+                 fname, len(out["considered"]))
+
+    # Some of these tables carry a region dimension as well. Take the
+    # national or capital row -- the deck talks about Ulaanbaatar prices --
+    # and pin it, so the cell lookup below stays two-dimensional.
+    fixed = {}
+    for d in js.ids:
+        if d in (dim_p, dim_t):
+            continue
+        labs = js.labels(d)
+        pick = next((pos for pos, l in labs.items()
+                     if any(w in str(l).casefold()
+                            for w in ("улсын дүн", "улаанбаатар", "нийслэл",
+                                      "бүгд", "нийт"))), min(labs))
+        fixed[d] = pick
+        log.info("weekly prices: %s has a %r dimension; using %r.",
+                 fname, d, str(labs[pick]).strip())
+
+    # NO FORWARD CLAMP HERE, and that is deliberate. Every other source is
+    # cut off at the reported month because it measures that month. This one
+    # does not: it is a LEADING indicator, published weekly, and the whole
+    # point of the price slide is where meat and fuel are heading before the
+    # monthly CPI catches up. Cutting it at the month end froze the slide on
+    # stale prices. The series therefore runs to the newest published week
+    # and carries that week's own date everywhere it appears; the value at
+    # the reported month end is kept alongside it for continuity.
+    keep = dated[-WEEKLY_PRICE_LOOKBACK:]
     if len(keep) < 8:
-        log.warning("weekly prices: only %d week(s) at or before the "
-                    "reported month.", len(keep))
+        log.warning("weekly prices: only %d week(s) available.", len(keep))
         return {}, out
 
     out["weeks"] = ["%04d-%02d-%02d" % k for k, _ in keep]
     out["as_of"] = out["weeks"][-1]
+    month_end_i = max((i for i, (k, _) in enumerate(keep)
+                       if (k[0], k[1]) <= (TARGET_YEAR, TARGET_MONTH)),
+                      default=None)
+    if month_end_i is not None:
+        out["month_end_as_of"] = out["weeks"][month_end_i]
+    ahead = len(keep) - 1 - (month_end_i if month_end_i is not None else -1)
+    if ahead > 0:
+        log.info("weekly prices: %d week(s) run past the reported month; "
+                 "kept, because this is a leading indicator. Latest week %s, "
+                 "last week inside %d-%02d was %s.", ahead, out["as_of"],
+                 TARGET_YEAR, TARGET_MONTH, out["month_end_as_of"])
 
     def val(ppos, tpos):
         try:
-            v = js.cell(**{dim_p: ppos, dim_t: tpos})
+            v = js.cell(**{dim_p: ppos, dim_t: tpos, **fixed})
         except Exception:
             return None
         return None if v is None else float(v)
+
+    prods = js.labels(dim_p)
 
     # first week of the reported year, for the year-to-date change
     ytd0 = next((i for i, (k, _) in enumerate(keep) if k[0] == TARGET_YEAR), 0)
@@ -3262,8 +3341,15 @@ def extract_weekly_prices():
         cur = next((v for v in reversed(vals) if v is not None), None)
         yr0 = next((v for v in vals[ytd0:] if v is not None), None)
         y_ago = vals[-53] if len(vals) >= 53 else None
+        # the same product at the last week inside the reported month, so a
+        # slide can quote either and say which it is quoting
+        me = None
+        if month_end_i is not None:
+            me = next((v for v in reversed(vals[:month_end_i + 1])
+                       if v is not None), None)
         out["products"].append({
             "label": name, "values": vals, "current": cur,
+            "month_end": me,
             "ytd_pct": (round((cur / yr0 - 1) * 100, 2)
                         if cur and yr0 else None),
             "yoy_pct": (round((cur / y_ago - 1) * 100, 2)
@@ -3313,9 +3399,9 @@ def extract_imf_weo(kpis):
     cand = sorted(RAW_DATA_DIR.glob("*WEO*.csv")) + \
         sorted(RAW_DATA_DIR.glob("imf_weo*.csv"))
     if not cand:
-        log.info("No IMF WEO export cached (raw_data/*WEO*.csv) -- the "
+        log.info("No IMF WEO export cached (raw_files/*WEO*.csv) -- the "
                  "Forecast sheet stays empty. Download Mongolia's WEO data "
-                 "from imf.org and drop the CSV into raw_data/.")
+                 "from imf.org and drop the CSV into raw_files/.")
         return {}
     path = cand[0]
     try:
@@ -3495,12 +3581,15 @@ def build_vintage(kpis, series):
 
     wk = series.get("weekly_prices") or {}
     if wk.get("as_of"):
+        me = wk.get("month_end_as_of")
         add("NSO 7 хоногийн үнийн мэдээ (weekly prices)",
-            "Weekly_Prices — meat and fuel, slide 8", wk["as_of"],
+            "Weekly_Prices — meat and fuel, slide 9", wk["as_of"],
             f"{len(wk.get('products', []))} products, "
-            f"{len(wk.get('weeks', []))} weeks"
-            + (" · later weeks set aside to stay within the reported month"
-               if wk.get("clamped") else ""))
+            f"{len(wk.get('weeks', []))} weeks, from "
+            f"{wk.get('source_file', '?')}"
+            + (f" · LEADING INDICATOR: runs past the reported month; last "
+               f"week inside it was {me}"
+               if me and me != wk["as_of"] else ""))
         # A weekly date never equals the reported month string, so the
         # generic comparison would call it MISSING or AHEAD. It is neither:
         # it is the freshest week that still falls inside the month.
@@ -3532,7 +3621,7 @@ def build_vintage(kpis, series):
     return {"target": tgt, "rows": rows}
 
 
-# COVERAGE (slide-by-slide status for the July-approved 21-slide deck)
+# COVERAGE (slide-by-slide status for the Excel 'Coverage' sheet)
 def build_coverage(kpis, series):
     ce = series.get("customs", {}).get("commodity_exports", {})
     gdp = series.get("nso", {})
@@ -3550,44 +3639,44 @@ def build_coverage(kpis, series):
     def s(ok, src, note=""):
         return {"status": "AUTO" if ok else "MISSING", "source": src, "note": note}
     rows = [
-        (1,  "Title / meeting date", s(True, "pipeline", "report_period string")),
+        (1,  "Title / date", s(True, "pipeline", "report_period string")),
         (2,  "Geopolitics", {"status": "MANUAL", "source": "-",
-                             "note": "editorial; cite external sources in speaker notes"}),
+                             "note": "editorial; no data feed"}),
         (3,  "Macro forecast snapshot", s(have["med"] and have["gdp"], "Bulletin+NSO+MB",
              "policy rate " + ("auto" if have["policy"] else "manual"))),
         (4,  "Real GDP cumulative growth", s(have["gdp"], "NSO")),
-        (5,  "GDP sector contributions", s(have["sectors"], "NSO",
+        (5,  "Sector contributions", s(have["sectors"], "NSO",
              "NSO table has 10 aggregated sectors")),
-        (6,  "Monthly GDP estimate", s(bool(series.get("mieg")), "NSO",
-             "official monthly estimate; carry its own vintage")),
-        (7,  "Inflation vs target", s(have["med"], "Mongolbank bulletin",
-             "headline + national/UB CPI series")),
-        (8,  "Weekly meat and fuel prices", s(bool(series.get("weekly_prices")),
-             "NSO weekly prices", "leading indicator; latest week is shown")),
-        (9,  "Inflation -> interest rates", s(have["policy"], "Mongolbank bulletin",
-             "policy, deposit and both new-loan rates")),
-        (10, "Trade balance & commodities", s(have["trade"] and have["commod"],
+        (6,  "Inflation vs target", s(have["med"], "MB bulletin",
+             "headline + 16-month national/UB CPI series, all auto")),
+        (7,  "Meat & fuel prices", {"status": "MANUAL",
+             "source": "NSO CPI PDF",
+             "note": "by decision (2026-07): heavy PDF parsing not worth "
+                     "automating; enter values by hand"}),
+        (8,  "Inflation -> interest rates", s(have["policy"], "MB bulletin",
+             "policy & deposit rate monthly series + CPI, all auto")),
+        (9,  "Trade balance & commodities", s(have["trade"] and have["commod"],
              "Customs")),
-        (11, "Export volumes", s(have["commod"], "Customs")),
-        (12, "Border prices", s(have["prices"], "Customs",
-             "monthly marginal unit values" if have["monthly"]
-             else "unit values; monthly history is incomplete")),
-        (13, "Balance of payments and reserves", s(have["mb"], "Mongolbank",
-             "CA/KA/FA parsed from raw_data/bop_manual.xlsx; cards retain own dates")),
-        (14, "Banking sector", s(kpis.get("bs_total_assets_mln_mnt")
+        (10, "Export volumes", s(have["commod"], "Customs")),
+        (11, "Border prices", s(have["prices"], "Customs",
+             "unit values; monthly once history cached" if not have["monthly"]
+             else "monthly marginal unit values")),
+        (12, "Balance of payments", s(have["mb"], "Mongolbank",
+             "CA/KA/FA parsed from bop_manual.xlsx"
+             if kpis.get("bop_current_account") is not None
+             else "cards auto; CA/KA/FA from the manual BoP file "
+             "(raw_files/bop_manual.xlsx -- ingestor prompts for it)")),
+        (13, "State budget", s(have["med"], "MB bulletin")),
+        (14, "Household income/expense", {"status": "MISSING", "source": "NSO",
+             "note": "needs Household Socio-Economic Survey table id"}),
+        (15, "Household debt", {"status": "MISSING", "source": "NSO",
+             "note": "same survey table"}),
+        (16, "Banking sector", s(kpis.get("bs_total_assets_mln_mnt")
                                  is not None, "Mongolbank",
-             "balance-sheet metrics and deposits")),
-        (15, "Loan growth structure", s(bool(series.get("bank_loans")), "Mongolbank",
-             "bridge, sector contributions and borrower growth")),
-        (16, "Sector section divider", {"status": "MANUAL", "source": "July deck",
-             "note": "structural divider"}),
-        (17, "Industry I", s(bool(series.get("industry_detail")), "NSO")),
-        (18, "Industry II", s(bool(series.get("industry_detail")), "NSO")),
-        (19, "Trade sector by region", s(bool(series.get("real_sector", {}).get("trade")), "NSO")),
-        (20, "Services: hotel and food", s(bool(series.get("real_sector", {}).get("hotel")
-                                               and series.get("real_sector", {}).get("food")), "NSO")),
-        (21, "Construction and transport", s(bool(series.get("real_sector", {}).get("construction")
-                                                   and series.get("real_sector", {}).get("transport")), "NSO")),
+             "balance-sheet xlsx parsed: assets, loans, CB securities, "
+             "deposits, past-due, NPL, equity + monthly series")),
+        (17, "Moody's slides (17-22)", {"status": "MANUAL", "source": "Moody's",
+             "note": "proprietary images; never automatable"}),
     ]
     return [{"slide": n, "content": c, **d} for n, c, d in rows]
 
@@ -3634,7 +3723,11 @@ def main():
               "bulletin_cpi": {"components": med_notes.get("cpi_components",
                                                            []),
                                "period": med_notes.get(
-                                   "cpi_components_period")},
+                                   "cpi_components_period"),
+                               "prev": med_notes.get("cpi_components_prev",
+                                                     []),
+                               "prev_period": med_notes.get(
+                                   "cpi_components_prev_period")},
               "bulletin_series": med_notes.get("series", {}), "mongolbank_cards": mb_cards,
               "banking_balance_sheet": bs_series, "bop": bop_series,
               "bank_loans": loan_series, "real_sector": real_sector,

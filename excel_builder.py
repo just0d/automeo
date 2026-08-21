@@ -191,7 +191,7 @@ def sheet_gdp(wb, series):
                "Deck slide 4. Source datapoints: NSO National Accounts "
                "(DT_NSO_0500_004V1). All growth figures are formulas over "
                "the quarterly levels below.")
-    r = _stamp(ws, r, "NSO national accounts", "NSO monthly GDP estimate")
+    r = _stamp(ws, r, "NSO national accounts", "NSO MIEG")
 
     ws.cell(row=r, column=1, value="Улирлын бодит ДНБ (Quarterly real GDP levels, "
             "mln MNT, 2015 prices)").font = F_BOLD
@@ -238,7 +238,7 @@ def sheet_gdp(wb, series):
     if mieg.get("monthly"):
         r += 2
         ws.cell(row=r, column=1, value="Эдийн засгийн өсөлтийн сарын "
-                "(NSO monthly GDP estimate, cumulative YoY, DT_NSO_0500_001V5)"
+                "индикатор (MIEG, cumulative YoY, NSO DT_NSO_0500_001V5)"
                 ).font = F_BOLD
         r += 1
         r = _header_row(ws, r, ["Сар (Month)", "Өсөлт (Growth, YoY cum.)"],
@@ -250,7 +250,7 @@ def sheet_gdp(wb, series):
             r += 1
     if mieg.get("contributions"):
         r += 2
-        ws.cell(row=r, column=1, value="Салбаруудын хувь нэмэр (monthly GDP sector "
+        ws.cell(row=r, column=1, value="Салбаруудын хувь нэмэр (MIEG sector "
                 f"contributions, pp, {mieg.get('contributions_period', '')})"
                 ).font = F_BOLD
         r += 1
@@ -298,7 +298,7 @@ def sheet_sectors(wb, series):
 
 def sheet_inflation(wb, k, series):
     ws = wb.create_sheet("Inflation")
-    r = _title(ws, "Inflation", "Deck slides 7 and 9. Headline from the Mongolbank statistical bulletin; the "
+    r = _title(ws, "Inflation", "Deck slides 6-7. Headline from the Mongolbank statistical bulletin; the "
                "12-month CPI series requires the NSO CPI table id (see "
                "raw_ingestor.py NSO_TABLES). Values stored as fractions, "
                "shown as % via number format.")
@@ -347,12 +347,12 @@ def sheet_inflation(wb, k, series):
         _cell(ws, r, 3, note)
         r += 1
 
-    # monthly series from the bulletin (deck slide 9)
+    # monthly series from the bulletin (deck slides 6 & 8)
     bser = series.get("bulletin_series", {}) or {}
     if bser.get("inflation_nat"):
         r += 2
         ws.cell(row=r, column=1, value="Сарын цуваа (Monthly series, "
-                "Mongolbank bulletin) — slide 9").font = F_BOLD
+                "Mongolbank bulletin) — slides 6 & 8").font = F_BOLD
         r += 1
         # Two lending rates, not one. Mongolbank publishes the weighted
         # average tugrik lending rate at market rates and again with
@@ -434,21 +434,48 @@ def sheet_inflation(wb, k, series):
                 "component contributions to headline, "
                 f"{cpi.get('period', '')})").font = F_BOLD
         r += 1
+        # This year beside last year, which is how the deck's table is laid
+        # out. The prior year comes from the same bulletin sheet, matched by
+        # category NAME so the two columns stay aligned even if the sheet
+        # reorders itself between releases.
+        prev = {d["name"]: d for d in (cpi.get("prev") or [])}
+        pp_lbl = cpi.get("period", "")
+        pv_lbl = cpi.get("prev_period", "")
         r = _header_row(ws, r, ["Бүлэг (Category)",
-                                "Хувь нэмэр (Contribution, pp)",
+                                f"Хувь нэмэр, {pp_lbl} (pp)",
+                                f"Эзлэх хувь, {pp_lbl} (share)",
+                                f"Хувь нэмэр, {pv_lbl or 'n/a'} (pp)",
+                                f"Эзлэх хувь, {pv_lbl or 'n/a'} (share)",
                                 "Бүлгийн өсөлт (Category YoY)",
-                                "Индекс (Level)"], [46, 15, 14, 12])
+                                "Индекс (Level)"],
+                        [46, 17, 17, 17, 17, 16, 12])
         first_c = r
+        tot_now = sum(d["pp"] for d in comps) or 1
+        tot_prv = sum(d["pp"] for d in prev.values()) or None
         for i, d in enumerate(comps):
             alt = i % 2 == 1
+            pv = prev.get(d["name"])
             _cell(ws, r, 1, d["name"], alt=alt)
             _cell(ws, r, 2, d["pp"], NUM2, alt=alt)
-            _cell(ws, r, 3, d["yoy_pct"] / 100.0, PCT, alt=alt)
-            _cell(ws, r, 4, d["level"], NUM, alt=alt)
+            _cell(ws, r, 3, d["pp"] / tot_now, PCT, alt=alt)
+            _cell(ws, r, 4, pv["pp"] if pv else None, NUM2, alt=alt)
+            _cell(ws, r, 5, (pv["pp"] / tot_prv) if (pv and tot_prv) else None,
+                  PCT, alt=alt)
+            _cell(ws, r, 6, d["yoy_pct"] / 100.0, PCT, alt=alt)
+            _cell(ws, r, 7, d["level"], NUM, alt=alt)
             r += 1
-        _cell(ws, r, 1, "Нийт (Total, pp — must match headline)", bold=True)
+        _cell(ws, r, 1, "Улсын инфляц (Total, pp — must match headline)",
+              bold=True)
         _cell(ws, r, 2, f"=SUM(B{first_c}:B{r - 1})", NUM2, bold=True)
+        _cell(ws, r, 3, f"=SUM(C{first_c}:C{r - 1})", PCT, bold=True)
+        _cell(ws, r, 4, f"=SUM(D{first_c}:D{r - 1})", NUM2, bold=True)
+        _cell(ws, r, 5, f"=SUM(E{first_c}:E{r - 1})", PCT, bold=True)
         r += 1
+        if not prev:
+            _cell(ws, r, 1, "Өмнөх оны задаргаа алга — бюллетень тухайн "
+                            "сарыг хамрахгүй байна (no prior-year breakdown: "
+                            "the bulletin does not reach that month).")
+            r += 1
 
 
 def sheet_trade(wb, k, series):
@@ -459,7 +486,7 @@ def sheet_trade(wb, k, series):
     formula. Returns cell refs for the Summary sheet.
     """
     ws = wb.create_sheet("Trade")
-    r = _title(ws, "Foreign trade", "Deck slide 10. Source: Customs gaali.mn "
+    r = _title(ws, "Foreign trade", "Deck slide 9. Source: Customs gaali.mn "
                "monthly bulletin, sheet 1. Money: thousand USD unless noted. "
                "YoY/balance columns are formulas.")
     r = _stamp(ws, r, "Customs (gaali.mn)")
@@ -534,7 +561,7 @@ def sheet_commodities(wb, series):
     ci = series.get("customs", {}).get("commodity_imports", {})
     ws = wb.create_sheet("Commodities")
     r = _title(ws, "Commodity exports & imports",
-               "Deck slides 10-11. Source: Customs sheet 8 / 8.2 / 3, matched "
+               "Deck slides 9-10. Source: Customs sheet 8 / 8.2 / 3, matched "
                "by HS code. Quantities in kg; amounts in thousand USD; every "
                "derived column is a formula.")
     r = _stamp(ws, r, "Customs (gaali.mn)")
@@ -611,7 +638,7 @@ def sheet_trade_sections(wb, series):
     secs = series.get("customs", {}).get("trade_sections", [])
     ws = wb.create_sheet("Trade_Sections")
     r = _title(ws, "Худалдаа, хэсгээр (Trade by HS section)",
-               "Full sectional detail behind slide 10. Source: Customs "
+               "Full sectional detail behind slide 9. Source: Customs "
                "sheet 3, thousand USD, cumulative both years. Export and "
                "import are separate tables, each ranked by its own current-"
                "year value; YoY, share and totals are formulas.")
@@ -669,7 +696,7 @@ def sheet_border_prices(wb, series):
     bp = series.get("customs", {}).get("border_prices", {})
     ws = wb.create_sheet("Border_Prices")
     r = _title(ws, "Border prices (export unit values)",
-               "Deck slide 12. Unit value = Δcumulative amount / Δcumulative "
+               "Deck slide 11. Unit value = Δcumulative amount / Δcumulative "
                "quantity per month, from Customs sheet 8. Series fills in "
                "as monthly workbooks are cached by the ingestor.")
     r = _stamp(ws, r, "Customs (gaali.mn)")
@@ -702,7 +729,7 @@ def sheet_external(wb, series):
     cards = series.get("mongolbank_cards", [])
     ws = wb.create_sheet("External_Sector")
     r = _title(ws, "Mongolbank statistics cards",
-               "Deck slide 13 (BoP, reserves, external debt, FDI). "
+               "Deck slide 12 (BoP, reserves, external debt, FDI) and slide "
                "16 inputs where exposed. Every card returned by the section "
                "sweep is listed.")
     r = _stamp(ws, r, "Mongolbank cards", "Balance of payments")
@@ -722,7 +749,7 @@ def sheet_external(wb, series):
         _cell(ws, r, 1, "No Mongolbank cards cached — run raw_ingestor.py")
         r += 1
 
-    # Balance of payments accounts (slide 13 chart & detail)
+    # Balance of payments accounts (slide 12 chart & detail)
     r += 2
     ws.cell(row=r, column=1, value="Balance of payments — annual sums "
             "(mln USD; latest year is YTD). Source: bop_manual.xlsx").font = \
@@ -756,7 +783,7 @@ def sheet_external(wb, series):
         for key in order[:3]:
             _cell(ws, r, 1, labels[key], bold=True)
             _cell(ws, r, 2, "n/a")
-            _cell(ws, r, 3, "provide raw_data/bop_manual.xlsx (the ingestor "
+            _cell(ws, r, 3, "provide raw_files/bop_manual.xlsx (the ingestor "
                             "prompts for it during each run)")
             r += 1
 
@@ -809,7 +836,7 @@ def sheet_banking(wb, k, series):
     ws = wb.create_sheet("Banking")
     basis = k.get("_bs_change_basis", "")
     r = _title(ws, "Banking sector — consolidated bank balance sheet",
-               "Deck slide 14. Source: Mongolbank 'Банкуудын нэгдсэн тайлан "
+               "Deck slide 16. Source: Mongolbank 'Банкуудын нэгдсэн тайлан "
                f"тэнцэл' xlsx (million MNT). {basis}")
     r = _stamp(ws, r, "Bank balance sheet", "Deposit tree")
     rows_meta = [
@@ -926,7 +953,7 @@ def sheet_banking(wb, k, series):
 
 def sheet_budget(wb, k, commod_refs):
     ws = wb.create_sheet("Budget")
-    r = _title(ws, "State budget", "Deck slide 3. Source: Mongolbank statistical bulletin. "
+    r = _title(ws, "State budget", "Deck slide 13. Source: Mongolbank statistical bulletin. "
                "Coal actual links to the Commodities sheet.")
     r = _stamp(ws, r, "Mongolbank bulletin")
     r = _header_row(ws, r, ["Үзүүлэлт (Indicator)", "Утга (Value)", "Нэгж (Unit)",
@@ -1415,7 +1442,7 @@ def _industry_detail_blocks(ws, series, r):
 
 def sheet_sector_charts(wb, k, series):
     """
-    Deck-ready charts for slides 17-21, drawn the way the analyst draws them.
+    Deck-ready charts for slides 16-21, drawn the way the analyst draws them.
 
     The data block under each chart is live: the contributions are the same
     figures as Real_Sector, and every block carries a SUM row that must equal
@@ -1426,7 +1453,7 @@ def sheet_sector_charts(wb, k, series):
     ws = wb.create_sheet("Sector_Charts")
     r = _title(ws, "Эдийн засгийн голлох салбаруудын гүйцэтгэл "
                    "(Performance of the main economic sectors)",
-               "Deck slides 17-21. Each chart stacks the components' "
+               "Deck slides 16-21. Each chart stacks the components' "
                "contributions with the sector's own growth as a line, in the "
                "house style. Values are fractions shown as percentages; the "
                "contributions in each row sum to that row's growth. Copy a "
@@ -1524,20 +1551,25 @@ def sheet_sector_charts(wb, k, series):
 
 def sheet_weekly_prices(wb, k, series):
     """
-    NSO's seven-day price survey for Ulaanbaatar — deck slide 8.
+    NSO's seven-day price survey for Ulaanbaatar — deck slide 9.
 
     This used to be two yellow cells copied off a presentation PDF. It is now
     the survey itself: every product, every week, with the change since the
     start of the year and against a year ago, and a chart of the two the deck
-    talks about. It is the only weekly source here, so it is clamped to the
-    reported month like everything else — a June report must not quote an
-    August price.
+    talks about.
+
+    Unlike every other source, this one is NOT cut off at the reported month.
+    It is a leading indicator — the point of the slide is where meat and fuel
+    are heading before the monthly CPI catches up — so it runs to the newest
+    published week and carries that week's own date. The value at the last
+    week inside the reported month is shown beside it, so a slide can quote
+    either and say which.
     """
     wp = series.get("weekly_prices") or {}
     ws = wb.create_sheet("Weekly_Prices")
     r = _title(ws, "7 хоногийн үнийн мэдээ, Улаанбаатар "
                    "(Weekly prices, Ulaanbaatar)",
-               "Deck slide 8. Source: NSO, Хүнсний гол нэрийн барааны 7 "
+               "Deck slide 9. Source: NSO, Хүнсний гол нэрийн барааны 7 "
                "хоногийн үнийн мэдээ. Prices in tugrik. YTD compares the "
                "latest week with the first week of the reported year; YoY "
                "with the same week last year.")
@@ -1545,13 +1577,21 @@ def sheet_weekly_prices(wb, k, series):
         _cell(ws, r, 1, "No weekly price table cached — run raw_ingestor.py.")
         return
     tgt = _VINTAGE.get("target", "")
+    me = wp.get("month_end_as_of")
+    ahead = bool(me and me != wp.get("as_of"))
     c = _cell(ws, r, 1, "МЭДЭЭЛЛИЙН ОН САР / DATA AS OF:  "
-              f"{wp.get('as_of','')} (weekly)      [тайлант үе / reported "
-              f"month: {tgt}]"
-              + ("   ← сүүлийн долоо хоногууд тайлант сараас хойш байсныг "
-                 "хассан (later weeks set aside)" if wp.get("clamped") else ""),
+              f"{wp.get('as_of','')} (7 хоног бүр / weekly)      "
+              f"[тайлант үе / reported month: {tgt}]"
+              + (f"   ← ТЭРГҮҮЛЭХ ҮЗҮҮЛЭЛТ: тайлант сараас хойшхи 7 хоногийг "
+                 f"хассангүй. Тайлант сарын сүүлийн 7 хоног: {me} "
+                 f"(leading indicator — weeks after the reported month are "
+                 f"kept; last week inside it was {me})" if ahead else ""),
               bold=True)
-    c.fill = PatternFill("solid", start_color="C6EFCE")
+    c.fill = PatternFill("solid", start_color="FFEB9C" if ahead else "C6EFCE")
+    r += 1
+    _cell(ws, r, 1, f"Эх файл (source table): {wp.get('source_file','?')}"
+          + (("   ·   " + "   ·   ".join(wp.get("considered", [])))
+             if len(wp.get("considered", [])) > 1 else ""))
     r += 2
 
     if wp.get("groups"):
@@ -1572,15 +1612,18 @@ def sheet_weekly_prices(wb, k, series):
 
     _cell(ws, r, 1, "Бүтээгдэхүүнээр (by product)", bold=True)
     r += 1
-    r = _header_row(ws, r, ["Бүтээгдэхүүн (Product)", "Сүүлийн үнэ (Latest)",
+    r = _header_row(ws, r, ["Бүтээгдэхүүн (Product)",
+                            f"Сүүлийн үнэ (Latest, {wp.get('as_of','')})",
+                            f"Тайлант сарын эцэст ({me or 'n/a'})",
                             "Оны эхнээс (YTD)", "Жилийн өмнөхөөс (YoY)"],
-                    [46, 16, 14, 16])
+                    [46, 20, 20, 14, 16])
     for i, p in enumerate(wp["products"]):
         alt = i % 2 == 1
         _cell(ws, r, 1, p["label"], alt=alt)
         _cell(ws, r, 2, p.get("current"), NUM, alt=alt)
-        _cell(ws, r, 3, pct_static(p.get("ytd_pct")), PCT, alt=alt)
-        _cell(ws, r, 4, pct_static(p.get("yoy_pct")), PCT, alt=alt)
+        _cell(ws, r, 3, p.get("month_end"), NUM, alt=alt)
+        _cell(ws, r, 4, pct_static(p.get("ytd_pct")), PCT, alt=alt)
+        _cell(ws, r, 5, pct_static(p.get("yoy_pct")), PCT, alt=alt)
         r += 1
     r += 2
 
@@ -1628,7 +1671,7 @@ def sheet_weekly_prices(wb, k, series):
 
 def sheet_real_sector(wb, k, series):
     """
-    Trade, services, construction and industry — deck slides 17-21.
+    Trade, services, construction and industry — deck slides 16-21.
 
     Laid out the way the analyst's own workbooks are: the cumulative total
     and its year-on-year growth, then each component's CONTRIBUTION to that
@@ -1644,7 +1687,7 @@ def sheet_real_sector(wb, k, series):
     ws = wb.create_sheet("Real_Sector")
     r = _title(ws, "Бодит салбарууд (Real sector — trade, services, "
                    "construction, industry)",
-               "Deck slides 17-21. Source: NSO 1212.mn. Cumulative from the "
+               "Deck slides 16-21. Source: NSO 1212.mn. Cumulative from the "
                "start of the year (өссөн дүнгээр); growth is year on year on "
                "that cumulative; each component's contribution is its share "
                "of the year-on-year change, so the contributions sum to the "
@@ -1757,7 +1800,7 @@ def sheet_forecast(wb, k, series):
                "present a figure from this sheet as an outturn.")
     if not w:
         _cell(ws, r, 1, "No IMF WEO export cached — drop the CSV from "
-                        "imf.org into raw_data/ (any name containing 'WEO').")
+                        "imf.org into raw_files/ (any name containing 'WEO').")
         return
     c = _cell(ws, r, 1,
               "МЭДЭЭЛЛИЙН ОН САР / DATA AS OF:  "
@@ -1905,7 +1948,7 @@ def sheet_summary(wb, k, gdp_refs, trade_refs, commod_refs, bank_refs=None):
     ws = wb.create_sheet("Summary", 0)
     r = _title(ws, f"Macroeconomic KPI Summary — {k.get('report_period', '')}",  # noqa: E501
                "Green figures are live links to the data sheets. Feeds deck "
-               "slide 3 and headline text on slides 4, 6, 7, 9, 10, 13.")
+               "slide 3 and headline text on slides 4, 6, 9, 12, 13.")
     # The Summary mixes sources, so it names every one of them and their
     # vintages rather than a single 'as of' month.
     _lag = [d for d in _VINTAGE["by_source"].values()
@@ -1946,61 +1989,61 @@ def sheet_summary(wb, k, gdp_refs, trade_refs, commod_refs, bank_refs=None):
         ("Бодит ДНБ-ий өсөлт (Real GDP growth, YoY cum.)",
          f"=GDP_Growth!{gdp_cell}" if gdp_cell else None, PCT,
          k.get("gdp_growth_period", ""), "NSO 1212.mn", "3, 4", True),
-        ("Эдийн засгийн сарын өсөлт (NSO monthly GDP estimate, YoY cum.)",
+        ("Эдийн засгийн өсөлтийн сарын индикатор (MIEG, YoY cum.)",
          pct_static(k.get("mieg_growth_pct")), PCT,
          k.get("_mieg_period_note")
-         or f"NSO monthly GDP estimate, {k.get('_mieg_period', 'not cached')}",
-         "NSO 1212.mn", "6", False),
+         or f"NSO MIEG, {k.get('_mieg_period', 'not cached')}",
+         "NSO 1212.mn", "4", False),
         ("Инфляц (Inflation, headline)", pct_static(k.get("inflation")), PCT,
-         bul_asof, "MB bulletin", "3, 7", False),
+         bul_asof, "MB bulletin", "3, 6", False),
         ("Инфляцын зорилтот түвшин (Inflation target)", pct_static(k.get("inflation_target")), PCT,
-         "Mongolbank official target", "Mongolbank", "7", False),
+         "Mongolbank official target", "Mongolbank", "6", False),
         ("Бодлогын хүү (Policy rate)", pct_static(k.get("policy_rate")), PCT,
-         k.get("_policy_rate_source", ""), "Mongolbank", "3, 9", False),
+         k.get("_policy_rate_source", ""), "Mongolbank", "3, 8", False),
         ("Зээлийн хүү (Bank loan rate, new loans)", pct_static(k.get("loan_rate")), PCT,
-         k.get("_loan_rate_date", ""), "Mongolbank", "9", False),
+         k.get("_loan_rate_date", ""), "Mongolbank", "8", False),
         ("Хадгаламжийн хүү (Deposit rate, new deposits)", pct_static(k.get("deposit_rate")),
-         PCT, k.get("_deposit_rate_date", ""), "Mongolbank", "9", False),
+         PCT, k.get("_deposit_rate_date", ""), "Mongolbank", "8", False),
         ("Банкны салбарын зээл (Bank loans outstanding)", k.get("bank_loans_tln_mnt"), NUM,
          f"tln MNT, {k.get('_bank_loans_tln_mnt_date', '')}", "Mongolbank",
-         "14", False),
+         "16", False),
         ("Ипотекийн зээл (Mortgage loans outstanding)", k.get("mortgage_loans_tln_mnt"), NUM,
          f"tln MNT, {k.get('_mortgage_loans_tln_mnt_date', '')}",
-         "Mongolbank", "14", False),
+         "Mongolbank", "16", False),
         ("Нийт экспорт (Total export)", f"=Trade!C{e}" if e else None, NUM,
-         f"thous. USD, {k.get('report_date', '')}", "Customs gaali.mn", "10",
+         f"thous. USD, {k.get('report_date', '')}", "Customs gaali.mn", "9",
          True),
         ("Нийт импорт (Total import)", f"=Trade!C{i}" if i else None, NUM,
-         f"thous. USD, {k.get('report_date', '')}", "Customs gaali.mn", "10",
+         f"thous. USD, {k.get('report_date', '')}", "Customs gaali.mn", "9",
          True),
         ("Худалдааны тэнцэл (Trade balance)", f"=Trade!C{e}-Trade!C{i}" if e and i else None, NUM,
          "thous. USD; formula: export cell - import cell",
-         "Customs gaali.mn", "10", True),
+         "Customs gaali.mn", "9", True),
         ("Экспортын өсөлт (Export growth, YoY)",
          f"=Trade!C{e}/Trade!B{e}-1" if e else None, PCT,
-         "formula: current / previous - 1", "Customs gaali.mn", "10", True),
+         "formula: current / previous - 1", "Customs gaali.mn", "9", True),
         ("Импортын өсөлт (Import growth, YoY)",
          f"=Trade!C{i}/Trade!B{i}-1" if i else None, PCT,
-         "formula: current / previous - 1", "Customs gaali.mn", "10", True),
+         "formula: current / previous - 1", "Customs gaali.mn", "9", True),
         ("Худалдааны тэнцэл, өмнөх оны эсрэг (Trade balance vs prev yr)",
          f"=Trade!C{b}/Trade!B{b}" if b else None, MULT,
-         "balance multiple", "Customs gaali.mn", "10", True),
+         "balance multiple", "Customs gaali.mn", "9", True),
         ("Нүүрсний экспортын хэмжээ (Coal export volume)",
          f"=Commodities!D{coal_r}/1E9" if coal_r else None, NUM2,
-         "mln t", "Customs gaali.mn", "11", True),
+         "mln t", "Customs gaali.mn", "10, 13", True),
         ("Нүүрсний хэмжээний өсөлт (Coal volume growth, YoY)",
          f"=Commodities!D{coal_r}/Commodities!C{coal_r}-1" if coal_r else None,
-         PCT, "formula over quantity cells", "Customs gaali.mn", "11", True),
+         PCT, "formula over quantity cells", "Customs gaali.mn", "10", True),
         ("Зэсийн баяжмалын экспортын хэмжээ (Copper conc. export volume)",
          f"=Commodities!D{copper_r}/1E6" if copper_r else None, NUM2,
-         "thous. t", "Customs gaali.mn", "11", True),
+         "thous. t", "Customs gaali.mn", "10", True),
         ("Зэсийн хэмжээний өсөлт (Copper volume growth, YoY)",
          f"=Commodities!D{copper_r}/Commodities!C{copper_r}-1"
          if copper_r else None, PCT, "formula over quantity cells",
-         "Customs gaali.mn", "11", True),
+         "Customs gaali.mn", "10", True),
         ("Алтны экспортын хэмжээ (Gold export volume)",
          f"=Commodities!D{gold_r}" if gold_r else None, NUM,
-         "kg", "Customs gaali.mn", "11", True),
+         "kg", "Customs gaali.mn", "10", True),
         ("Алтны хэмжээний өсөлт (Gold volume growth, YoY)",
          f"=Commodities!D{gold_r}/Commodities!C{gold_r}-1"
          if gold_r else None, PCT, "formula over quantity cells",
@@ -2008,15 +2051,15 @@ def sheet_summary(wb, k, gdp_refs, trade_refs, commod_refs, bank_refs=None):
         ("Гадаад валютын нөөц (FX reserves)",
          k.get("reserves_mln_usd_mb", k.get("reserves_mln_usd")), NUM,
          f"mln USD, {k.get('_reserves_mln_usd_mb_date', '')}",
-         "Mongolbank", "3, 13", False),
+         "Mongolbank", "3, 12", False),
         ("Төлбөрийн тэнцэл (Balance of payments)", k.get("balance_of_payments_mln_usd"), NUM,
          f"mln USD, {k.get('_balance_of_payments_mln_usd_date', '')}",
-         "Mongolbank", "13", False),
+         "Mongolbank", "12", False),
         ("Нийт гадаад өр (External debt)", k.get("external_debt_mln_usd"), NUM,
          f"mln USD, {k.get('_external_debt_mln_usd_date', '')}",
-         "Mongolbank", "13", False),
+         "Mongolbank", "12", False),
         ("ШХО-ын үлдэгдэл (FDI stock)", k.get("fdi_mln_usd"), NUM,
-         f"mln USD, {k.get('_fdi_mln_usd_date', '')}", "Mongolbank", "13",
+         f"mln USD, {k.get('_fdi_mln_usd_date', '')}", "Mongolbank", "12",
          False),
         ("Ам.долларын ханш (USD/MNT rate, eop)", k.get("usd_mnt_rate"),
          NUM, f"YoY {k.get('usd_mnt_yoy_pct', 'n/a')}%, MB bulletin "
@@ -2025,26 +2068,26 @@ def sheet_summary(wb, k, gdp_refs, trade_refs, commod_refs, bank_refs=None):
          (k.get("dc_loans_total_yoy_pct") / 100.0
           if k.get("dc_loans_total_yoy_pct") is not None else None), PCT,
          f"loans outstanding {k.get('dc_loans_total_tln_mnt', 'n/a')} tln ₮",
-         "MB bulletin", "15", False),
+         "MB bulletin", "16", False),
         ("Иргэдийн зээлийн өсөлт (Individuals' loans growth, YoY)",
          (k.get("dc_loans_individuals_yoy_pct") / 100.0
           if k.get("dc_loans_individuals_yoy_pct") is not None else None),
          PCT, f"individuals {k.get('dc_loans_individuals_tln_mnt', 'n/a')} "
-         "tln ₮", "MB bulletin", "15", False),
+         "tln ₮", "MB bulletin", "16", False),
         ("Банкны нийт актив (Bank total assets)",
          (f"=Banking!C{bank_refs['bs_total_assets']}/1E6"
           if bank_refs and k.get("bs_total_assets_mln_mnt") is not None
           else None), NUM2,
          f"tln MNT, as of {k.get('_bs_last_column', '')}", "Mongolbank",
-         "14", True),
+         "16", True),
         ("Чанаргүй зээлийн өөрчлөлт (Bank NPL change since Jan)",
          (f"=Banking!C{bank_refs['bs_npl']}/Banking!B{bank_refs['bs_npl']}-1"
           if bank_refs and k.get("bs_npl_mln_mnt") is not None else None),
-         PCT, k.get("_bs_change_basis", ""), "Mongolbank", "14", True),
+         PCT, k.get("_bs_change_basis", ""), "Mongolbank", "16", True),
         ("Төсвийн тэнцэл (Budget balance, cum.)", k.get("budget_balance_bln_mnt"), NUM,
-         bul_short, "MB bulletin", "3", False),
+         bul_short, "MB bulletin", "13", False),
         ("Төсвийн орлого, гүйцэтгэл (Budget revenue collected)", k.get("budget_revenue_collected_bln"),
-         NUM, "bln MNT", "MB bulletin", "3", False),
+         NUM, "bln MNT", "MB bulletin", "13", False),
     ]
     for idx, (name, val, fmt, note, src, slide, link) in enumerate(rows):
         alt = idx % 2 == 1

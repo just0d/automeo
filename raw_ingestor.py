@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Downloads all raw source files into ./raw_data (Customs, NSO, Mongolbank
+"""Downloads all raw source files into ./raw_files (Customs, NSO, Mongolbank
 cards, Mongolbank monthly reports incl. the statistical bulletin) with
 run-time id resolution, walk-back, retries, validation and a run manifest.
 See the Data Dictionary document for source-by-source details.
@@ -28,7 +28,7 @@ from urllib3.util.retry import Retry
 
 # CONFIGURATION
 BASE_DIR = Path(__file__).resolve().parent
-RAW_DATA_DIR = BASE_DIR / "raw_data"
+RAW_DATA_DIR = BASE_DIR / "raw_files"
 MANIFEST_PATH = RAW_DATA_DIR / "manifest.json"
 
 HEADERS = {
@@ -109,6 +109,14 @@ NSO_TABLES = {
     # fresher than the reported month, so the processor clamps it like the
     # rest. It replaces what used to be two hand-typed yellow cells.
     # НИЙСЛЭЛИЙН ХҮНСНИЙ ГОЛ НЭР БОЛОН БЕНЗИН ТҮЛШНИЙ 7 ХОНОГИЙН ҮНИЙН МЭДЭЭ
+    # A SECOND weekly table, by aimag, covering the same survey. NSO keeps
+    # both, and they do not always update together -- in August 2026 the
+    # capital-city table stalled in July while this one was current. The
+    # processor reads whichever is fresher, so one going quiet no longer
+    # freezes the price slide.
+    "nso_weekly_prices_aimag": ("DT_NSO_0300_010V5.px",
+                                "Economy%2C%20environment",
+                                "Consumer%20Price%20Index"),
     "nso_weekly_prices":  ("DT_NSO_0600_001V4.px",  "Economy%2C%20environment",
                            "Consumer%20Price%20Index"),
 }
@@ -201,6 +209,9 @@ NSO_TABLE_PAYLOADS.update({
     "nso_transport":      _sel(**{"Үзүүлэлт": _ALL, "Улирал": _ALL}),
     # Weekly prices: both dimensions in full -- 31 products x every week.
     "nso_weekly_prices":  _sel(**{"Бүтээгдэхүүн": _ALL, "Хугацаа": _ALL}),
+    # the aimag table carries a third dimension, Бүс
+    "nso_weekly_prices_aimag": _sel(**{"Бүтээгдэхүүн": _ALL, "Бүс": _ALL,
+                                       "Хугацаа": _ALL}),
 })
 
 # SOURCE 4: Mongolbank (stat.mongolbank.mn)
@@ -237,7 +248,7 @@ MONGOLBANK_SURVEYS = {
                               "keywords": ["сарын бюллетень"]},
     # NOTE: Balance of Payments is NOT here by design -- its portal page is
     # a dynamic dashboard, so BoP is handled by the human-in-the-loop step
-    # ingest_bop_manual() below (raw_data/bop_manual.xlsx).
+    # ingest_bop_manual() below (raw_files/bop_manual.xlsx).
 }
 for _n, _sid in (_ovget("mongolbank", "survey_ids", default={}) or {}).items():
     if _n in MONGOLBANK_SURVEYS:
@@ -250,7 +261,8 @@ MONGOLBANK_SURVEYID_SCAN = range(1, 61)   # sweep for auto-discovery
 MONGOLBANK_STATIC_FALLBACK = {            # last-resort frozen snapshot ids
     "banking_survey": 4515,
     "banking_balance_sheet": 5098,
-    "bulletin": 5115,                     # May 2026 (captured from DevTools)
+    "bulletin": 5356,                     # captured from DevTools 2026-08-13
+    #          previous known-good ids: 5217 (2026-06), 5115 (2026-05)
 }
 MONGOLBANK_STATIC_FALLBACK.update(
     _ovget("mongolbank", "static_fallback", default={}) or {})
@@ -293,7 +305,7 @@ BULLETIN_PROBE_BUDGET = 40
 # Balance of Payments: human-in-the-loop
 # The BoP page on stat.mongolbank.mn is a dynamic dashboard (checkboxes +
 # date pickers), not a file list. The operator downloads the Excel once per
-# run and saves it as raw_data/bop_manual.xlsx; ingest_bop_manual() prompts
+# run and saves it as raw_files/bop_manual.xlsx; ingest_bop_manual() prompts
 # for it interactively when missing.
 BOP_MANUAL_FILE = "bop_manual.xlsx"
 
@@ -529,7 +541,7 @@ def _customs_record_file_url(rec: dict) -> str:
 def ingest_customs(target_month: int, target_year: int) -> None:
     """
     Download EVERY monthly bulletin workbook for the target year and the
-    previous year (skipping files already cached in raw_data). The per-month
+    previous year (skipping files already cached in raw_files). The per-month
     history is what powers the monthly trade series and border unit prices.
     """
     log.info("---- [1/4] CUSTOMS (gaali.mn) ----")
@@ -755,7 +767,7 @@ def _mb_resolve_report_id(name: str, cfg: dict, dump_on_fail=True,
       3. if no surveyid configured, sweep MONGOLBANK_SURVEYID_SCAN looking
          for keyword matches at either level.
     Returns (report_id, monthly_entries) or (None, []). Raw payloads are
-    dumped to raw_data/mongolbank_sublist_debug_<sid>.json on failure so a
+    dumped to raw_files/mongolbank_sublist_debug_<sid>.json on failure so a
     mismatch is diagnosable without another DevTools session.
     """
     def monthly(sid):
@@ -1092,7 +1104,7 @@ def ingest_mongolbank_reports(target_month: int, target_year: int) -> None:
         if not candidates:
             pending.append(name)
             log.warning("MONGOLBANK[%s]: no id resolvable (see "
-                        "mongolbank_sublist_debug_*.json in raw_data).", name)
+                        "mongolbank_sublist_debug_*.json in raw_files).", name)
             continue
 
         # download: first candidate that yields a VALID xlsx wins. For the
@@ -1317,7 +1329,7 @@ def ingest_deposits_export(target_month: int, target_year: int) -> None:
     except Exception as exc:
         log.warning("deposit series fetch failed (%s) -- the Banking sheet "
                     "falls back to the report's own columns, or to "
-                    "raw_data/deposits_manual.xlsx if you saved one.", exc)
+                    "raw_files/deposits_manual.xlsx if you saved one.", exc)
         _record("mongolbank_deposits", "failed", str(exc))
         return
 
@@ -1349,7 +1361,7 @@ def ingest_bop_manual() -> None:
     operator downloads the Excel once per run:
 
         stat.mongolbank.mn/external -> Төлбөрийн тэнцэл -> export Excel
-        -> save as raw_data/bop_manual.xlsx
+        -> save as raw_files/bop_manual.xlsx
 
     When the file is missing and the run is interactive, execution pauses
     with an input() prompt; in non-interactive runs (cron/CI) it is skipped

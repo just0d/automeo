@@ -18,7 +18,7 @@ touching a line of code:
     }
 
 Run `python overrides.py` to check the file parses and see what it will do.
-`docs/TROUBLESHOOTING.md` explains how to capture each id from the browser.
+The companion operations manual explains how to capture each id from the browser.
 
 Nothing here is required. With no file, or an empty one, the pipeline behaves
 exactly as it does today; overrides only ever *add* certainty.
@@ -138,7 +138,7 @@ def apply_and_log(data=None):
 
 EXAMPLE = """{
   // AutoMEO overrides — every key is optional, delete what you do not need.
-  // Lines starting with // are ignored. See docs/TROUBLESHOOTING.md.
+  // Lines starting with // are ignored. See the companion operations manual.
 
   "mongolbank": {
     // Pin a specific file id for one month. Use this when the run logs

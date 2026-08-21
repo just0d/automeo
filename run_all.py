@@ -111,10 +111,10 @@ def main() -> None:
     period_args = [a for a in sys.argv[1:] if a.strip().isdigit()][:2]
 
     if offline:
-        log.info("OFFLINE mode: skipping ingestion, using cached raw_data/.")
+        log.info("OFFLINE mode: skipping ingestion, using cached raw_files/.")
     elif not run_step("raw_ingestor.py", period_args):
         log.warning("Ingestion had a hard failure; continuing with cached "
-                    "raw files (see raw_data/manifest.json).")
+                    "raw files (see raw_files/manifest.json).")
 
     proc_started = time.time()
     if not run_step("data_processor.py", period_args):

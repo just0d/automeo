@@ -1,6 +1,6 @@
 {
   // AutoMEO overrides — every key is optional, delete what you do not need.
-  // Lines starting with // are ignored. See docs/TROUBLESHOOTING.md.
+  // Lines starting with // are ignored. See the companion operations manual.
 
   "mongolbank": {
     // Pin a specific file id for one month. Use this when the run logs

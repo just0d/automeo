@@ -1,8 +1,8 @@
 # Downloaded source data. Everything in here is fetched at run time and can
-# be re-fetched; none of it belongs in version control. The seed copy of the
-# Balance of Payments export lives in seed/ instead.
-raw_data/*
-!raw_data/.gitkeep
+# be re-fetched; none of it belongs in version control.
+raw_files/*
+!raw_files/.gitkeep
+!raw_files/bop_manual.xlsx
 
 # Pipeline output
 Macro_Metrics_*.xlsx
@@ -12,10 +12,6 @@ deck_digest.md
 
 # Decks
 *.pptx
-!docs/**/*.pptx
-
-# Versioned reference artifacts used by the approved July deck workflow
-!docs/reference/*.xlsx
 
 # Hand-set identifiers. This one is deliberately ignored: it records what is
 # broken on YOUR machine right now, and committing it would silently pin ids
